@@ -1,7 +1,7 @@
 package com.rest.app.service;
 
 import java.io.IOException;
-import java.text.DecimalFormat;
+import java.math.BigDecimal;
 import java.util.List;
 
 import javax.persistence.TypedQuery;
@@ -29,6 +29,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import com.rest.app.entity.User;
+import com.rest.app.helpers.CalculationHelper;
 import com.rest.app.model.ErrorResponse;
 import com.rest.app.model.IResponse;
 import com.rest.app.model.Response;
@@ -38,14 +39,12 @@ public class ResponseService {
 	private static final Logger LOG = LoggerFactory.getLogger(ResponseService.class);
 
 	private static final String GITHUB_URL = "https://api.github.com/users/";
-	private static final DecimalFormat DF2 = new DecimalFormat("#.##");
 	private final SessionFactory sessionFactory;
 
 	public ResponseService() {
 		final Configuration configuration = new Configuration().configure();
 		configuration.addAnnotatedClass(User.class);
-		final StandardServiceRegistryBuilder registryBuilder = new StandardServiceRegistryBuilder()
-				.applySettings(configuration.getProperties());
+		final StandardServiceRegistryBuilder registryBuilder = new StandardServiceRegistryBuilder().applySettings(configuration.getProperties());
 		sessionFactory = configuration.buildSessionFactory(registryBuilder.build());
 	}
 
@@ -61,7 +60,8 @@ public class ResponseService {
 			if (json == null) {
 				new ErrorResponse("There was an error during retrieving info from info");
 			}
-		} catch (final Exception e) {
+		}
+		catch (final Exception e) {
 			LOG.error(e.getMessage());
 			return new ErrorResponse("There was an error during retrieving info from info");
 		}
@@ -76,10 +76,13 @@ public class ResponseService {
 			response.setAvatarUrl(json.getString("avatar_url"));
 			response.setCreatedAt(json.getString("created_at"));
 
-			final int followers = json.getInt("followers");
-			final int publicRepos = json.getInt("public_repos");
-			response.setCalculations(followers != 0 ? calculate(followers, publicRepos) : "-1");
-		} catch (final JSONException e) {
+			final BigDecimal followers = BigDecimal.valueOf(json.getInt("followers"));
+			final BigDecimal publicRepos = BigDecimal.valueOf(json.getInt("public_repos"));
+			System.out.println(followers);
+			System.out.println(publicRepos);
+			response.setCalculations(followers.compareTo(BigDecimal.ZERO) == 0 ? "-1" : CalculationHelper.calculate(followers, publicRepos));
+		}
+		catch (final JSONException e) {
 			LOG.error(e.getMessage());
 			return new ErrorResponse("Error during processing response from GitHub");
 		}
@@ -87,7 +90,8 @@ public class ResponseService {
 		LOG.info("Saving to DB...");
 		try {
 			updateDb(user);
-		} catch (final Exception e) {
+		}
+		catch (final Exception e) {
 			LOG.error(e.getMessage());
 			return new ErrorResponse("Error during saving to database");
 		}
@@ -95,10 +99,8 @@ public class ResponseService {
 		return response;
 	}
 
-	private JSONObject retrieveGithubInfo(final String user)
-			throws ClientProtocolException, IOException, ParseException, JSONException {
-		final RequestConfig requestConfig = RequestConfig.custom().setConnectionRequestTimeout(1000)
-				.setConnectTimeout(1000).setSocketTimeout(1000).build();
+	private JSONObject retrieveGithubInfo(final String user) throws ClientProtocolException, IOException, ParseException, JSONException {
+		final RequestConfig requestConfig = RequestConfig.custom().setConnectionRequestTimeout(1000).setConnectTimeout(1000).setSocketTimeout(1000).build();
 		final HttpClientBuilder builder = HttpClientBuilder.create().setDefaultRequestConfig(requestConfig);
 		final CloseableHttpClient client = builder.build();
 		final CloseableHttpResponse response = client.execute(new HttpGet(GITHUB_URL + user));
@@ -107,11 +109,6 @@ public class ResponseService {
 		}
 
 		return new JSONObject(EntityUtils.toString(response.getEntity()));
-	}
-
-	private String calculate(final int followers, final int publicRepos) {
-		final double calulatedValue = 6 / (double) followers * (2 + publicRepos);
-		return DF2.format(calulatedValue);
 	}
 
 	private void updateDb(final String login) {
@@ -131,7 +128,8 @@ public class ResponseService {
 			user = new User();
 			user.setLogin(login);
 			user.setRequestCount(1);
-		} else {
+		}
+		else {
 			user = results.get(0);
 			user.setRequestCount(user.getRequestCount() + 1);
 		}
